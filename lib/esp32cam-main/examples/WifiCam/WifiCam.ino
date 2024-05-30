@@ -8,8 +8,7 @@ esp32cam::Resolution initialResolution;
 
 WebServer server(80);
 
-void
-setup()
+void setup()
 {
   Serial.begin(115200);
   Serial.println();
