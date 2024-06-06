@@ -1,110 +1,16 @@
-// #include <WebServer.h>
-// #include <WiFi.h>
-// #include <esp32cam.h>
-// #include <SPI.h>
-// #include <Wire.h>
- 
-// const char* WIFI_SSID = "vierobot";
-// const char* WIFI_PASS = "robotviet";
- 
-// WebServer server(80);
- 
- 
-// static auto loRes = esp32cam::Resolution::find(320, 240);
-// static auto midRes = esp32cam::Resolution::find(350, 530);
-// static auto hiRes = esp32cam::Resolution::find(800, 600);
-// void serveJpg()
-// {
-//   auto frame = esp32cam::capture();
-//   if (frame == nullptr) {
-//     Serial.println("CAPTURE FAIL");
-//     server.send(503, "", "");
-//     return;
-//   }
-//   Serial.printf("CAPTURE OK %dx%d %db\n", frame->getWidth(), frame->getHeight(),
-//                 static_cast<int>(frame->size()));
- 
-//   server.setContentLength(frame->size());
-//   server.send(200, "image/jpeg");
-//   WiFiClient client = server.client();
-//   frame->writeTo(client);
-// }
- 
-// void handleJpgLo()
-// {
-//   if (!esp32cam::Camera.changeResolution(loRes)) {
-//     Serial.println("SET-LO-RES FAIL");
-//   }
-//   serveJpg();
-// }
- 
-// void handleJpgHi()
-// {
-//   if (!esp32cam::Camera.changeResolution(hiRes)) {
-//     Serial.println("SET-HI-RES FAIL");
-//   }
-//   serveJpg();
-// }
- 
-// void handleJpgMid()
-// {
-//   if (!esp32cam::Camera.changeResolution(midRes)) {
-//     Serial.println("SET-MID-RES FAIL");
-//   }
-//   serveJpg();
-// }
- 
- 
-// void  setup(){
-//   Serial.begin(115200);
-//   Serial.println();
-//   {
-//     using namespace esp32cam;
-//     Config cfg;
-//     cfg.setPins(pins::AiThinker);
-//     cfg.setResolution(hiRes);
-//     cfg.setBufferCount(2);
-//     cfg.setJpeg(80);
- 
-//     bool ok = Camera.begin(cfg);
-//     Serial.println(ok ? "CAMERA OK" : "CAMERA FAIL");
-//   }
-// //   WiFi.persistent(false);
-// //   WiFi.mode(WIFI_STA);
-// //   WiFi.begin(WIFI_SSID, WIFI_PASS);
-//   WiFi.softAP(WIFI_SSID, WIFI_PASS);
-//   Serial.println("Access Point created.");
-// //   while (WiFi.status() != WL_CONNECTED) {
-// //     delay(500);
-// //   }
-//   Serial.println("");
-//   Serial.println("APIP address: ");
-//   Serial.print("http://");
-//   Serial.println(WiFi.softAPIP());
-//   Serial.println(WiFi.localIP());
-//   Serial.println("  /cam-lo.jpg");
-//   Serial.println("  /cam-hi.jpg");
-//   Serial.println("  /cam-mid.jpg");
- 
-//   server.on("/cam-lo.jpg", handleJpgLo);
-//   server.on("/cam-hi.jpg", handleJpgHi);
-//   server.on("/cam-mid.jpg", handleJpgMid);
- 
-//   server.begin();
-// }
- 
-// void loop()
-// {
-//   server.handleClient();
-// }
-
 #include "../lib/esp32cam-main/examples/WifiCam/WifiCam.hpp"
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <base64.h>
+#include "../api.h"
 
 static const char* WIFI_SSID = "5A1-8";
 static const char* WIFI_PASS = "sky25a18";
+static const char* VISION_API_URL = api; // Replace with your Google Vision API key
 
 esp32cam::Resolution initialResolution;
+String recognizedText = "";  // Global variable to store the recognized text
 
 WebServer server(80);
 
@@ -149,9 +55,48 @@ try {
 </script>
 )EOT";
 
-static void
-serveStill(bool wantBmp)
-{
+void sendFrameToVisionAPI(esp32cam::Frame* frame) {
+  if (frame == nullptr) {
+    Serial.println("Frame capture failed");
+    return;
+  }
+
+  HTTPClient http;
+  http.begin(VISION_API_URL);
+  http.addHeader("Content-Type", "application/json");
+
+  // Encode the frame in base64
+  String base64Image = base64::encode((uint8_t*)frame->data(), frame->size());
+
+  // Create the JSON request body
+  String requestBody = "{";
+  requestBody += "\"requests\":[";
+  requestBody += "{";
+  requestBody += "\"image\":{\"content\":\"" + base64Image + "\"},";
+  requestBody += "\"features\":[{\"type\":\"TEXT_DETECTION\"}]";
+  requestBody += "}";
+  requestBody += "]";
+  requestBody += "}";
+
+  int httpResponseCode = http.POST(requestBody);
+
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.printf("Response: %s\n", response.c_str());
+
+    // Parse the Vision API response
+    StaticJsonDocument<4096> doc;
+    deserializeJson(doc, response);
+    recognizedText = doc["responses"][0]["fullTextAnnotation"]["text"].as<String>();
+    Serial.printf("Recognized Text: %s\n", recognizedText.c_str());
+  } else {
+    Serial.printf("Error: %s\n", http.errorToString(httpResponseCode).c_str());
+  }
+
+  http.end();
+}
+
+static void serveStill(bool wantBmp) {
   auto frame = esp32cam::capture();
   if (frame == nullptr) {
     Serial.println("capture() failure");
@@ -177,20 +122,26 @@ serveStill(bool wantBmp)
   frame->writeTo(client);
 }
 
-static void
-serveMjpeg()
-{
+static void serveMjpeg() {
   Serial.println("MJPEG streaming begin");
   WiFiClient client = server.client();
   auto startTime = millis();
-  int nFrames = esp32cam::Camera.streamMjpeg(client);
+  int nFrames = 0;
+  while (client.connected()) {
+    auto frame = esp32cam::capture();
+    if (frame == nullptr) {
+      Serial.println("capture() failure");
+      break;
+    }
+    sendFrameToVisionAPI(frame.get()); // Send frame to Google Vision API
+    frame->writeTo(client);
+    nFrames++;
+  }
   auto duration = millis() - startTime;
   Serial.printf("MJPEG streaming end: %dfrm %0.2ffps\n", nFrames, 1000.0 * nFrames / duration);
 }
 
-void
-addRequestHandlers()
-{
+void addRequestHandlers() {
   server.on("/", HTTP_GET, [] {
     server.setContentLength(sizeof(FRONTPAGE));
     server.send(200, "text/html");
@@ -206,6 +157,10 @@ addRequestHandlers()
       b.println(r);
     }
     server.send(200, "text/csv", b);
+  });
+
+  server.on("/recognized_text", HTTP_GET, [] {
+    server.send(200, "text/plain", recognizedText);
   });
 
   server.on(UriBraces("/{}x{}.{}"), HTTP_GET, [] {
@@ -244,7 +199,6 @@ addRequestHandlers()
     }
   });
 }
-
 
 void setup() {
   Serial.begin(115200);
@@ -291,3 +245,4 @@ void setup() {
 void loop() {
   server.handleClient();
 }
+

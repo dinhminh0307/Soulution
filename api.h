@@ -1,0 +1,1 @@
+const char *api = "https://vision.googleapis.com/v1/images:annotate?key=AIzaSyBkQEKcZTK98MnTgpZd1ri5M9ZWsrQvZNo";
