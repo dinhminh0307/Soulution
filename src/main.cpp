@@ -36,6 +36,7 @@ footer { margin-top: 1rem; }
 </table>
 <h2>Recognized Text</h2>
 <div id="recognized-text">Loading...</div>
+<button onclick="speakRecognizedText()">Speak Text</button>
 <footer>Powered by <a href="https://esp32cam.yoursunny.dev/">esp32cam</a></footer>
 <script type="module">
 async function fetchText(uri, init) {
@@ -49,9 +50,11 @@ async function fetchText(uri, init) {
 async function updateRecognizedText() {
   try {
     const recognizedText = await fetchText("/recognized_text");
+    console.log("Recognized Text fetched: ", recognizedText); // Debug log
     document.getElementById("recognized-text").textContent = recognizedText;
   } catch (err) {
     document.getElementById("recognized-text").textContent = "Error: " + err.toString();
+    console.error("Error fetching recognized text: ", err); // Debug log
   }
 }
 
@@ -62,11 +65,24 @@ try {
   }`).join("");
 } catch (err) {
   document.querySelector("#resolutions td").textContent = err.toString();
+  console.error("Error fetching resolutions: ", err); // Debug log
 }
 
 // Periodically update the recognized text
 setInterval(updateRecognizedText, 5000); // Update every 5 seconds
 updateRecognizedText();
+
+function speakRecognizedText() {
+  const recognizedText = document.getElementById("recognized-text").textContent;
+  console.log("Text to speak: ", recognizedText); // Debug log
+  if (recognizedText) {
+    const utterance = new SpeechSynthesisUtterance(recognizedText);
+    window.speechSynthesis.speak(utterance);
+    console.log("Speaking text"); // Debug log
+  } else {
+    console.warn("No text to speak"); // Debug log
+  }
+}
 </script>
 )EOT";
 
@@ -102,7 +118,11 @@ void sendFrameToVisionAPI(esp32cam::Frame* frame) {
     // Parse the Vision API response
     StaticJsonDocument<4096> doc;
     deserializeJson(doc, response);
-    recognizedText = doc["responses"][0]["fullTextAnnotation"]["text"].as<String>();
+    if (doc["responses"][0].containsKey("textAnnotations")) {
+      recognizedText = doc["responses"][0]["textAnnotations"][0]["description"].as<String>();
+    } else {
+      recognizedText = "";
+    }
     Serial.printf("Recognized Text: %s\n", recognizedText.c_str());
   } else {
     Serial.printf("Error: %s\n", http.errorToString(httpResponseCode).c_str());
