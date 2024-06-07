@@ -120,6 +120,7 @@ void sendFrameToVisionAPI(esp32cam::Frame* frame) {
     deserializeJson(doc, response);
     if (doc["responses"][0].containsKey("textAnnotations")) {
       recognizedText = doc["responses"][0]["textAnnotations"][0]["description"].as<String>();
+      Serial.println("Updated Recognized Text: " + recognizedText); // Debug log
     } else {
       recognizedText = "";
     }
@@ -196,6 +197,7 @@ void addRequestHandlers() {
 
   server.on("/recognized_text", HTTP_GET, [] {
     server.send(200, "text/plain", recognizedText);
+    Serial.println("Accessed Recognized Text: " + recognizedText); // Debug log
   });
 
   server.on(UriBraces("/{}x{}.{}"), HTTP_GET, [] {
