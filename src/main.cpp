@@ -34,6 +34,8 @@ footer { margin-top: 1rem; }
 <tbody id="resolutions">
 <tr><td colspan="3">loading
 </table>
+<h2>Recognized Text</h2>
+<div id="recognized-text">Loading...</div>
 <footer>Powered by <a href="https://esp32cam.yoursunny.dev/">esp32cam</a></footer>
 <script type="module">
 async function fetchText(uri, init) {
@@ -44,6 +46,15 @@ async function fetchText(uri, init) {
   return (await response.text()).trim().replaceAll("\r\n", "\n");
 }
 
+async function updateRecognizedText() {
+  try {
+    const recognizedText = await fetchText("/recognized_text");
+    document.getElementById("recognized-text").textContent = recognizedText;
+  } catch (err) {
+    document.getElementById("recognized-text").textContent = "Error: " + err.toString();
+  }
+}
+
 try {
   const list = (await fetchText("/resolutions.csv")).split("\n");
   document.querySelector("#resolutions").innerHTML = list.map((r) => `<tr>${
@@ -52,6 +63,10 @@ try {
 } catch (err) {
   document.querySelector("#resolutions td").textContent = err.toString();
 }
+
+// Periodically update the recognized text
+setInterval(updateRecognizedText, 5000); // Update every 5 seconds
+updateRecognizedText();
 </script>
 )EOT";
 
