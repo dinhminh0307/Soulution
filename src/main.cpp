@@ -5,8 +5,8 @@
 #include <base64.h>
 #include "../api/api.h"
 
-static const char* WIFI_SSID = "5A1-8";
-static const char* WIFI_PASS = "sky25a18";
+static const char* WIFI_SSID = "iPhone";
+static const char* WIFI_PASS = "12345678910";
 static const char* VISION_API_URL = api; // Replace with your Google Vision API key
 
 esp32cam::Resolution initialResolution;
@@ -245,4 +245,3 @@ void setup() {
 void loop() {
   server.handleClient();
 }
-
